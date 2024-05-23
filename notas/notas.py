@@ -140,82 +140,84 @@ def escolar_o_egresado(df):
         tipo = '-'
     return tipo
 
-def cumple_its(df,colegios):
-    coles = (df.loc[:,['DNI','GRADO','CODMOD']].drop_duplicates())
-    coles['CODMOD'] = coles['CODMOD'].str[:-2]
-    coles = coles.join(colegios[['NOMBRE DE COLEGIO','CONDICION']],on='CODMOD').fillna('-')
-    coles['CONDICION'] = coles['CONDICION'].replace('-','NO ITS')
-    # los colegios de los gados 3, 4 y 5 deben ser todos ITS
-    if (coles.loc[coles['GRADO'].isin(['3.°','4.°','5.°']),'CONDICION'] != 'NO ITS').all():
-        its = 'Sí'
-    else:
-        its = 'No'
-    return its,coles
+def cumple_excepcion(df, minADA):
+    # Contar el número de notas AD y A
+    counts = df['NOTA'].value_counts()
+    num_ad = counts.get('AD', 0)
+    num_a = counts.get('A', 0)
+    total_notas = len(df)
 
-def cumple_excepcion(df,minADA):
-    number = df['NOTA'].astype(str).str.isdigit()
-    # Promedio de notas numéricas
-    mismo_colegio = len(df['CODMOD'].unique()) == 1
-    if mismo_colegio:
-        prom = df.loc[number,'NOTA'].astype(float).mean()
-    else:
-        prom = df.loc[number & df['GRADO'].isin(['3.°','4.°','5.°']),'NOTA'].astype(float).mean()
-    #Cantidad de notas
-    counts = (df
-              .loc[~number,'NOTA']
-              .value_counts()
-              .rename('Cantidad')
-              .to_frame()
-              .reset_index()
-              .rename(columns={'index':'NOTA'}))
+    # Calcular el porcentaje de notas AD y A
+    porcentaje = ((num_ad + num_a) / total_notas) * 100
+
+    # Determinar si el estudiante aplica a la modalidad
+    aplica = porcentaje >= 90
+
+    # Estructura de resultados
+    resultado = 'Sí' if aplica else 'No'
+    counts = counts.reset_index().rename(columns={'index': 'NOTA', 'NOTA': 'Cantidad'})
     counts['DNI'] = df['DNI'].unique()[0]
-    # Si hay alguna C ya no es valido
-    if 'C' in df['NOTA']:
-        return 'No',counts
-    if number.sum() > (~number).sum():
-        return 'Sí' if prom>=14 else 'No', counts
-    else:
-        # revisar notas que son A y AD son minADA o m'as
-        ad_y_a = df[
-            ~number & df['NOTA'].isin(['AD','A'])
-        ].shape[0]
-        return 'Sí' if ad_y_a>=minADA else 'No' , counts
+
+    return resultado, counts
 
 def calcular_promedios(df):
     # Convertimos la nota del comportamiento a número
-    comportamiento = {'AD':20,'A':17,'B':15,'C':13}
+    comportamiento = {'AD': 20, 'A': 17, 'B': 15, 'C': 13}
     df.loc[
-        df['DESC']=='COMPORTAMIENTO','NOTA'
+        df['DESC'] == 'COMPORTAMIENTO', 'NOTA'
     ] = (df
-         .loc[df['DESC']=='COMPORTAMIENTO','NOTA']
+         .loc[df['DESC'] == 'COMPORTAMIENTO', 'NOTA']
          .map(lambda x: comportamiento[x]))
     # Separamos grados con letras y grados con números
     numeros = df[df['NOTA'].astype(str).str.isdigit()]
     numeros['NOTA'] = numeros['NOTA'].astype(float)
     letras = df[~df['NOTA'].astype(str).str.isdigit()]
     # Calculamos la nota R para las letras
-    equiv = {'AD':4.0,'A':3.0,'B':2.5,'C':1.0}
+    equiv = {'AD': 4.0, 'A': 3.0, 'B': 2.5, 'C': 1.0}
     letras['NOTA'] = letras['NOTA'].apply(lambda x: equiv[x])
     # Se obtiene la nota R por Competencia
-    Rnumeros = numeros.groupby(['DNI','GRADO','DESC'])['NOTA'].mean()
+    Rnumeros = numeros.groupby(['DNI', 'GRADO', 'DESC'])['NOTA'].mean()
     Rletras = (letras
-               .groupby(['DNI','GRADO','DESC'],group_keys=False)['NOTA']
-               .apply(lambda x: ((x.sum()/x.count())*10/4)*1000)
-               .map(math.trunc) /1000)
+               .groupby(['DNI', 'GRADO', 'DESC'], group_keys=False)['NOTA']
+               .apply(lambda x: ((x.sum() / x.count()) * 10 / 4) * 1000)
+               .map(math.trunc) / 1000)
     # Se obtiene la nota vigesimal
-    Rletras = ((Rletras - 2.5)*8/3)
+    Rletras = ((Rletras - 2.5) * 8 / 3)
     # Se vuelve a juntar los grados
     if Rletras.empty:
         notaR = Rnumeros
     elif Rnumeros.empty:
         notaR = Rletras
     else:
-        notaR = pd.DataFrame(pd.concat([Rnumeros,Rletras]))
+        notaR = pd.DataFrame(pd.concat([Rnumeros, Rletras]))
     notaR = notaR.reset_index()
     # Se obtiene el promedio por Grado
     if '5.°' in notaR['GRADO'].unique():
         prom1a5 = notaR['NOTA'].mean()
     else:
         prom1a5 = None
-    prom1a4 = notaR.loc[~notaR['GRADO'].isin(['5.°']),'NOTA'].mean()
-    return prom1a4,prom1a5,notaR
+    prom1a4 = notaR.loc[~notaR['GRADO'].isin(['5.°']), 'NOTA'].mean()
+    return prom1a4, prom1a5, notaR
+
+def evaluar_periodos(df):
+    periodos = {
+        "1RO A 4TO": df[df['GRADO'].isin(['1.°', '2.°', '3.°', '4.°'])],
+        "1RO A 5TO": df[df['GRADO'].isin(['1.°', '2.°', '3.°', '4.°', '5.°'])],
+        "3RO A 5TO": df[df['GRADO'].isin(['3.°', '4.°', '5.°'])]
+    }
+
+    evaluaciones = []
+    for periodo, data in periodos.items():
+        num_ad = data['NOTA'].value_counts().get('AD', 0)
+        num_a = data['NOTA'].value_counts().get('A', 0)
+        total_notas = len(data)
+        porcentaje = ((num_ad + num_a) / total_notas) * 100
+        estado = "SI CUMPLE" if porcentaje >= 90 else "NO CUMPLE"
+        evaluaciones.append({
+            "PERIODO": periodo,
+            "PORCENTAJE": f"{porcentaje:.2f}%",
+            "ESTADO": estado
+        })
+
+    return pd.DataFrame(evaluaciones)
+
