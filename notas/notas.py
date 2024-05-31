@@ -13,14 +13,14 @@ def repair_pdf(in_file, out_file):
     if not gs:
         raise RuntimeError("Ghostscript not found")
     subprocess.check_call(
-        [gs,"-dSAFER","-dNOPAUSE","-dBATCH",
-         "-sDEVICE=pdfwrite","-o",out_file,in_file,],
-        stdout= subprocess.DEVNULL,
-        stderr= subprocess.DEVNULL
+        [gs, "-dSAFER", "-dNOPAUSE", "-dBATCH",
+         "-sDEVICE=pdfwrite", "-o", out_file, in_file],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
     )
 
 def read_data(filepath):
-    reader = PdfReader(filepath,strict=True)
+    reader = PdfReader(filepath, strict=True)
     first_page = reader.pages[0]
     text = first_page.extract_text()
     constancia = re.findall(
@@ -33,12 +33,12 @@ def read_data(filepath):
     )
     if constancia:
         documento = constancia[0]
-        nombre = re.findall(r'estudiante(?:\s)*(.*),(?:\s)*con',text)
+        nombre = re.findall(r'estudiante(?:\s)*(.*),(?:\s)*con', text)
     elif certificado:
         documento = certificado[0]
-        nombre = re.findall(r'Que(?:\s)*(.*),(?:\s)*con DNI',text)
+        nombre = re.findall(r'Que(?:\s)*(.*),(?:\s)*con DNI', text)
     else:
-        raise RuntimeError('EL archivo no es ni COE ni CLAE')    
+        raise RuntimeError('El archivo no es ni COE ni CLAE')    
     if nombre:
         nombre = nombre[0]
     else:
@@ -48,87 +48,82 @@ def read_data(filepath):
         r'DNI(?:\s)*?(?: del estudiante)?(?:\s)*?N\.°(?:\s)*?([0-9]{8})',
         text
     )
+    if not dni:
+        dni = re.findall(
+            r'Código del estudiante N\.°(?:\s)*?([0-9]{8})',
+            text
+        )
     if dni:
         dni = dni[0]
     else:
-        raise RuntimeError("No se encontró el DNI")
+        raise ValueError("No se encontró el DNI")
 
-    return dni,nombre,documento
+    return dni, nombre, documento
 
 def procesar_tabla(tab):
-    # Quitamos la última columna de Observación si es que hubiera
-    if tab.iloc[0,-1] == 'Observación':
-        tab = tab.iloc[:,:-1]
-    # creamos la cabecera
-    header = tab.iloc[:3].apply(lambda x: x.replace('',x.name))
+    if tab.iloc[0, -1] == 'Observación':
+        tab = tab.iloc[:, :-1]
+    header = tab.iloc[:3].apply(lambda x: x.replace('', x.name))
     tab.columns = pd.MultiIndex.from_arrays(header.values)
-    tab = tab.iloc[3:-1] # se quitan los 3 primeros y el ultimo
-    # Rellenar los 2 primeros campos hacia abajo
-    tab.iloc[:,:2] = tab.iloc[:,:2].replace('',np.nan).ffill()
-    # Convertir a formato TidyData
+    tab = tab.iloc[3:-1]
+    tab.iloc[:, :2] = tab.iloc[:, :2].replace('', np.nan).ffill()
     tab = (tab.melt(id_vars=list(tab.columns[:-5]))
            .rename(columns={
-               ('Año lectivo:','Grado:','Código modular de la IE:'):'TIPO',
-               (1,1,1):'DESC',
-               (2,2,2):'COMP',
-               'variable_0':'AÑO',
-               'variable_1':'GRADO',
-               'variable_2':'CODMOD',
-               'value':'NOTA',
-               })
-           .query('NOTA != "-"') # Quitar las filas sin nota
-           .query('NOTA != "EXO"') # Quitar los cursos exonerados
+               ('Año lectivo:', 'Grado:', 'Código modular de la IE:'): 'TIPO',
+               (1, 1, 1): 'DESC',
+               (2, 2, 2): 'COMP',
+               'variable_0': 'AÑO',
+               'variable_1': 'GRADO',
+               'variable_2': 'CODMOD',
+               'value': 'NOTA',
+           })
+           .query('NOTA != "-"')
+           .query('NOTA != "EXO"')
            )
     return tab
 
-def procesar_pdf(file,pwd=os.getcwd()):
+def verificar_anio_lectivo(df):
+    anios = df.query('GRADO == "4.°" or GRADO == "5.°"')['AÑO'].astype(int)
+    if not anios.empty and anios.max() <= 2021:
+        return False
+    return True
+
+def procesar_pdf(file, pwd=os.getcwd()):
     filename = f'{pwd}/file.pdf'
-    with open(filename,'wb') as f:
+    with open(filename, 'wb') as f:
         f.write(file.getbuffer())
-
-    # Reparamos el pdf para que sea estándar
     original = f'{filename[:-4]}_old{filename[-4:]}'
-    os.rename(filename,original)
-    repair_pdf(original,filename)
-
-    # Buscamos el DNI y si es COE o CLA
-    dni,nombre,documento = read_data(filename)
-
-    # Obtener la tabla de cada hoja del PDF
-    tables = camelot.read_pdf(filename,pages='all',strip_text='\n')
+    os.rename(filename, original)
+    repair_pdf(original, filename)
+    dni, nombre, documento = read_data(filename)
+    tables = camelot.read_pdf(filename, pages='all', strip_text='\n')
     tablas = []
     l = []
     for t in tables:
         d = t.df
-        # Ignorar tabla de "pie de página"
-        if d.iloc[-1,0].startswith('* Este'):
+        if d.iloc[-1, 0].startswith('* Este'):
             continue
-        # Quitar la cabecera si NO ES la primera tabla
         if len(l) > 0:
             d = d.iloc[3:]
         l.append(d)
-        # Si es la última tabla
-        if d.iloc[-1,0] == 'Situación final': 
+        if d.iloc[-1, 0] == 'Situación final': 
             tablas.append(procesar_tabla(pd.concat(l)))
             l = []
     res = pd.concat(tablas)
     res['DNI'] = dni
     res['DOCUMENTO'] = documento
-    res['TIPO'] = res['TIPO'].str.replace(' y Competencias','')
-    res['COMP'] = res['COMP'].replace('',np.nan)
-    res= res.query('TIPO == "Áreas Curriculares"')
-    # Fix Educación Religiosa
-    res.loc[
-        res['DESC'].str.startswith('EDUCACIÓN RELIGIOSA Construye'),'DESC'
-    ] = 'EDUCACIÓN RELIGIOSA'
-    res.loc[
-        res['COMP'].fillna('').str.startswith('trascendente, comprendiendo'),'COMP'
-    ] = 'Construye su identidad como persona humana, amada por Dios, digna, libre y trascendente, comprendiendo la doctrina de su propia religión, abierto al diálogo con las que le son cercanas'
-    # Fix Ciencia y Tecnología
-    res.loc[
-        res['COMP'].fillna('').str.contains('vivos; materia'),'COMP'
-    ] = 'Explica el mundo físico basándose en conocimientos sobre los seres vivos, materia y energía, biodiversidad, Tierra y universo'
-    return dni,nombre,documento,res
+    res['TIPO'] = res['TIPO'].str.replace(' y Competencias', '')
+    res['COMP'] = res['COMP'].replace('', np.nan)
+    res = res.query('TIPO == "Áreas Curriculares"')
+    res.loc[res['DESC'].str.startswith('EDUCACIÓN RELIGIOSA Construye'), 'DESC'] = 'EDUCACIÓN RELIGIOSA'
+    res.loc[res['COMP'].fillna('').str.startswith('trascendente, comprendiendo'), 'COMP'] = 'Construye su identidad como persona humana, amada por Dios, digna, libre y trascendente, comprendiendo la doctrina de su propia religión, abierto al diálogo con las que le son cercanas'
+    res.loc[res['COMP'].fillna('').str.contains('vivos; materia'), 'COMP'] = 'Explica el mundo físico basándose en conocimientos sobre los seres vivos, materia y energía, biodiversidad, Tierra y universo'
+    
+    # Verificar año lectivo del grado 4.° y 5.°
+    if not verificar_anio_lectivo(res):
+        return f"{dni} - No cumple con el requisito de tener hasta dos años de egreso.", None, None, None
+    
+    return dni, nombre, documento, res
 
 def escolar_o_egresado(df):
     grados = df['GRADO'].unique()
@@ -141,49 +136,39 @@ def escolar_o_egresado(df):
     return tipo
 
 def cumple_excepcion(df, minADA):
-    # Contar el número de notas AD y A
-    counts = df['NOTA'].value_counts()
-    num_ad = counts.get('AD', 0)
-    num_a = counts.get('A', 0)
-    total_notas = len(df)
-
-    # Calcular el porcentaje de notas AD y A
-    porcentaje = ((num_ad + num_a) / total_notas) * 100
-
-    # Determinar si el estudiante aplica a la modalidad
-    aplica = porcentaje >= 90
-
-    # Estructura de resultados
-    resultado = 'Sí' if aplica else 'No'
-    counts = counts.reset_index().rename(columns={'index': 'NOTA', 'NOTA': 'Cantidad'})
+    number = df['NOTA'].apply(lambda x: isinstance(x, (int, float)) or str(x).isdigit())
+    mismo_colegio = len(df['CODMOD'].unique()) == 1
+    if mismo_colegio:
+        prom = df.loc[number, 'NOTA'].astype(float).mean()
+    else:
+        prom = df.loc[number & df['GRADO'].isin(['3.°', '4.°', '5.°']), 'NOTA'].astype(float).mean()
+    counts = (df
+              .loc[~number, 'NOTA']
+              .value_counts()
+              .rename('Cantidad')
+              .to_frame()
+              .reset_index()
+              .rename(columns={'index': 'NOTA'}))
     counts['DNI'] = df['DNI'].unique()[0]
-
-    return resultado, counts
+    if 'C' in df['NOTA']:
+        return 'No', counts
+    if number.sum() > (~number).sum():
+        return 'Sí' if prom >= 14 else 'No', counts
+    else:
+        ad_y_a = df[~number & df['NOTA'].isin(['AD', 'A'])].shape[0]
+        return 'Sí' if ad_y_a >= minADA else 'No', counts
 
 def calcular_promedios(df):
-    # Convertimos la nota del comportamiento a número
     comportamiento = {'AD': 20, 'A': 17, 'B': 15, 'C': 13}
-    df.loc[
-        df['DESC'] == 'COMPORTAMIENTO', 'NOTA'
-    ] = (df
-         .loc[df['DESC'] == 'COMPORTAMIENTO', 'NOTA']
-         .map(lambda x: comportamiento[x]))
-    # Separamos grados con letras y grados con números
-    numeros = df[df['NOTA'].astype(str).str.isdigit()]
+    df.loc[df['DESC'] == 'COMPORTAMIENTO', 'NOTA'] = (df.loc[df['DESC'] == 'COMPORTAMIENTO', 'NOTA'].map(lambda x: comportamiento[x] if isinstance(x, str) else x))
+    numeros = df[df['NOTA'].apply(lambda x: isinstance(x, (int, float)) or str(x).isdigit())]
     numeros['NOTA'] = numeros['NOTA'].astype(float)
-    letras = df[~df['NOTA'].astype(str).str.isdigit()]
-    # Calculamos la nota R para las letras
+    letras = df[~df['NOTA'].apply(lambda x: isinstance(x, (int, float)) or str(x).isdigit())]
     equiv = {'AD': 4.0, 'A': 3.0, 'B': 2.5, 'C': 1.0}
     letras['NOTA'] = letras['NOTA'].apply(lambda x: equiv[x])
-    # Se obtiene la nota R por Competencia
     Rnumeros = numeros.groupby(['DNI', 'GRADO', 'DESC'])['NOTA'].mean()
-    Rletras = (letras
-               .groupby(['DNI', 'GRADO', 'DESC'], group_keys=False)['NOTA']
-               .apply(lambda x: ((x.sum() / x.count()) * 10 / 4) * 1000)
-               .map(math.trunc) / 1000)
-    # Se obtiene la nota vigesimal
+    Rletras = (letras.groupby(['DNI', 'GRADO', 'DESC'], group_keys=False)['NOTA'].apply(lambda x: ((x.sum() / x.count()) * 10 / 4) * 1000).map(math.trunc) / 1000)
     Rletras = ((Rletras - 2.5) * 8 / 3)
-    # Se vuelve a juntar los grados
     if Rletras.empty:
         notaR = Rnumeros
     elif Rnumeros.empty:
@@ -191,7 +176,6 @@ def calcular_promedios(df):
     else:
         notaR = pd.DataFrame(pd.concat([Rnumeros, Rletras]))
     notaR = notaR.reset_index()
-    # Se obtiene el promedio por Grado
     if '5.°' in notaR['GRADO'].unique():
         prom1a5 = notaR['NOTA'].mean()
     else:
@@ -199,25 +183,65 @@ def calcular_promedios(df):
     prom1a4 = notaR.loc[~notaR['GRADO'].isin(['5.°']), 'NOTA'].mean()
     return prom1a4, prom1a5, notaR
 
-def evaluar_periodos(df):
+def evaluar_periodos(df, carrera, es_letras):
     periodos = {
-        "1RO A 4TO": df[df['GRADO'].isin(['1.°', '2.°', '3.°', '4.°'])],
-        "1RO A 5TO": df[df['GRADO'].isin(['1.°', '2.°', '3.°', '4.°', '5.°'])],
-        "3RO A 5TO": df[df['GRADO'].isin(['3.°', '4.°', '5.°'])]
+        "1RO A 4TO": ['1.°', '2.°', '3.°', '4.°'],
+        "1RO A 5TO": ['1.°', '2.°', '3.°', '4.°', '5.°'],
+        "3RO A 5TO": ['3.°', '4.°', '5.°']
     }
+    resultados = []
+    for periodo, grados in periodos.items():
+        notas = df[df['GRADO'].isin(grados)]
+        if notas.empty:
+            continue
+        if es_letras:
+            total_notas = len(notas)
+            ad_a = len(notas[notas['NOTA'].isin(['AD', 'A'])])
+            porcentaje_ad_a = (ad_a / total_notas) * 100 if total_notas > 0 else 0
+            estado = "CUMPLE" if porcentaje_ad_a >= 90 else "NO CUMPLE"
+            resultados.append({
+                "PERIODO EVALUACIÓN": periodo,
+                "PORCENTAJE CON NOTAS AD Y A": f"{porcentaje_ad_a:.2f}%",
+                "ESTADO": estado
+            })
+        else:
+            notas_numericas = notas['NOTA'].apply(lambda x: float(x) if isinstance(x, (int, float)) or str(x).isdigit() else None)
+            notas_numericas = notas_numericas.dropna()
+            promedio = notas_numericas.mean() if not notas_numericas.empty else None
+            if carrera == "MEDICINA":
+                estado = "CUMPLE" if promedio and promedio >= 16 else "NO CUMPLE"
+            else:
+                estado = "CUMPLE" if promedio and promedio >= 14 else "NO CUMPLE"
+            resultados.append({
+                "PERIODO EVALUACIÓN": periodo,
+                "PROMEDIO FINAL": f"{promedio:.2f}" if promedio is not None else "N/A",
+                "ESTADO": estado
+            })
+    return pd.DataFrame(resultados)
 
-    evaluaciones = []
-    for periodo, data in periodos.items():
-        num_ad = data['NOTA'].value_counts().get('AD', 0)
-        num_a = data['NOTA'].value_counts().get('A', 0)
-        total_notas = len(data)
-        porcentaje = ((num_ad + num_a) / total_notas) * 100
-        estado = "SI CUMPLE" if porcentaje >= 90 else "NO CUMPLE"
-        evaluaciones.append({
-            "PERIODO": periodo,
-            "PORCENTAJE": f"{porcentaje:.2f}%",
-            "ESTADO": estado
-        })
-
-    return pd.DataFrame(evaluaciones)
+def procesar(file, minADA, carrera):
+    global TEMP
+    dni, nombre, documento, df = procesar_pdf(file, pwd=TEMP.name)
+    if isinstance(dni, str) and "No cumple con el requisito" in dni:
+        return dni, None, None, None, None, None
+    tipo = escolar_o_egresado(df)
+    prom1a4, prom1a5, notaR = calcular_promedios(df)
+    cumple, counts = cumple_excepcion(df, minADA)
+    es_letras = df['NOTA'].apply(lambda x: not (isinstance(x, (int, float)) or str(x).isdigit())).any()
+    periodos_resultados = evaluar_periodos(df, carrera, es_letras)
+    periodos_resultados['DNI'] = dni
+    result = pd.Series({
+        'DNI': dni,
+        'Nombre': nombre,
+        'Excepcion': cumple,
+        'Prom1a4': prom1a4,
+        'Prom1a5': prom1a5,
+        'Tipo': tipo,
+        'Documento': documento,
+        'MinADyA': minADA,
+    })
+    notas = counts.drop(columns='DNI').set_index('NOTA')['Cantidad'].rename(0)
+    result = pd.concat([result, notas], axis=0)
+    result = result.reindex(['DNI', 'Nombre', 'Tipo', 'Excepcion', 'Prom1a4', 'Prom1a5', 'AD', 'A', 'B', 'C', 'Documento', 'MinADyA'])
+    return result, df, counts, notaR, periodos_resultados, es_letras
 
