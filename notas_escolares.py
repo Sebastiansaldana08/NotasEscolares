@@ -9,7 +9,7 @@ from notas import procesar_pdf, escolar_o_egresado, calcular_promedios, cumple_e
 
 # Especificar la ruta de Ghostscript
 if os.name == 'nt':  # Si es Windows
-    os.environ["PATH"] += os.pathsep + r'C:\Program Files\gs\gs9.54.0\bin'
+    os.environ["PATH"] += os.pathsep + r'C:\Program Files\gs\gs10.03.1\bin'
 else:  # Si es otro sistema operativo (por ejemplo, Linux)
     os.environ["PATH"] += os.pathsep + r'/usr/bin'
 

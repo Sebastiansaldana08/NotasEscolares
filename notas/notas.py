@@ -9,11 +9,11 @@ import pandas as pd
 from pypdf import PdfReader
 
 def repair_pdf(in_file, out_file):
-    gs = shutil.which("gs")
-    if not gs:
-        raise RuntimeError("Ghostscript not found")
+    gs_path = r'C:\Program Files\gs\gs10.03.1\bin\gswin64c.exe'  # Asegúrate de que este camino es correcto
+    if not os.path.exists(gs_path):
+        raise RuntimeError("Ghostscript not found in specified path")
     subprocess.check_call(
-        [gs, "-dSAFER", "-dNOPAUSE", "-dBATCH",
+        [gs_path, "-dSAFER", "-dNOPAUSE", "-dBATCH",
          "-sDEVICE=pdfwrite", "-o", out_file, in_file],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
