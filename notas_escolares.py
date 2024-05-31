@@ -8,7 +8,10 @@ import base64
 from notas import procesar_pdf, escolar_o_egresado, calcular_promedios, cumple_excepcion, evaluar_periodos, procesar
 
 # Especificar la ruta de Ghostscript
-os.environ["PATH"] += os.pathsep + r'/usr/bin'
+if os.name == 'nt':  # Si es Windows
+    os.environ["PATH"] += os.pathsep + r'C:\Program Files\gs\gs9.54.0\bin'
+else:  # Si es otro sistema operativo (por ejemplo, Linux)
+    os.environ["PATH"] += os.pathsep + r'/usr/bin'
 
 # creamos un directorio temporal
 TEMP = tempfile.TemporaryDirectory()
