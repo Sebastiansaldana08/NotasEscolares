@@ -9,18 +9,21 @@ import pandas as pd
 from pypdf import PdfReader
 
 def repair_pdf(in_file, out_file):
-    # Añadir múltiples posibles rutas para Ghostscript
     possible_paths = [
-        shutil.which("gs"),  # Intentar encontrar Ghostscript en el PATH
-        "/usr/bin/gs",       # Ruta común en muchos sistemas Linux
-        "/usr/local/bin/gs", # Otra ruta común en sistemas Linux
-        "/app/.heroku/vendor/bin/gs"  # Ruta posible en Heroku/Streamlit
+        shutil.which("gswin64c"),
+        shutil.which("gswin32c"),
+        shutil.which("gs"),
+        r"C:\Program Files\gs\gs10.03.1\bin\gswin64c.exe",
+        r"C:\Program Files\gs\gs10.03.1\bin\gswin32c.exe",
+        "/usr/bin/gs",
+        "/usr/local/bin/gs",
+        "/app/.heroku/vendor/bin/gs"
     ]
     
-    gs = next((path for path in possible_paths if path), None)
+    gs = next((path for path in possible_paths if path and os.path.exists(path)), None)
     
     if not gs:
-        raise RuntimeError("Ghostscript not found in specified paths")
+        raise RuntimeError("[ERROR] Ghostscript no encontrado en las rutas especificadas")
     
     subprocess.check_call(
         [gs, "-dSAFER", "-dNOPAUSE", "-dBATCH",
