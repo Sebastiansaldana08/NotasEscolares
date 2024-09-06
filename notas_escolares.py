@@ -1,3 +1,4 @@
+
 import os
 import io
 import tempfile
@@ -41,12 +42,13 @@ def set_background(image_file):
     st.markdown(page_bg_img, unsafe_allow_html=True)
 
 # Llamar la función para establecer la imagen de fondo
-set_background('img.png')  # Asegúrate de que img.png esté en el mismo directorio que este script
+set_background('img.png') 
 
 @st.cache_data(persist="disk", show_spinner="Procesando ⏳")
 def procesar_archivo(file, minADA, carrera):
     global TEMP
     dni, nombre, documento, df, grado_maximo = procesar_pdf(file, pwd=TEMP.name)
+    #print(f"Grado máximo en procesar_archivo: {grado_maximo}")  # Imprimir grado máximo para depuración
     if isinstance(dni, str) and "No cumple con el requisito" in dni:
         return dni, None, None, None, None, None
     tipo = escolar_o_egresado(df)
@@ -70,7 +72,7 @@ def procesar_archivo(file, minADA, carrera):
     result = result.reindex(['DNI', 'Nombre', 'Tipo', 'Excepcion', 'Prom1a4', 'Prom1a5', 'AD', 'A', 'B', 'C', 'Documento', 'MinADyA'])
     return result, df, counts, notaR, periodos_resultados, es_letras
 
-def main():
+def main():    
     # Obtener la ruta del directorio actual
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
@@ -107,14 +109,43 @@ def main():
         st.markdown("""
         <ul>
             <li>Los estudiantes del 5° año de secundaria y egresados de estudios secundarios en el país o extranjero (máximo hasta con dos (02) años del egreso).</li>
-            <li>Haber obtenido un promedio de 14 o más o se encuentren en el tercio superior del colegio de procedencia (para todas las carreras profesionales excepto Medicina Humana).</li>
-            <li>Los que postulan a la carrera de Medicina, haber obtenido un promedio de 16 o más.</li>
+            <li>Haber obtenido un promedio de 14 o más o se encuentren en el tercio superior del colegio de procedencia (para todas las carreras profesionales excepto Medicina Humana). El promedio o cálculo del tercio superior se puede realizar usando los siguientes años académicos:
+                <ul>
+                    <li>Del 1° al 4° de secundaria.</li>
+                    <li>De 1° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                    <li>De 3° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                </ul>
+            </li>
+            <li>Los que postulan a la carrera de Medicina, haber obtenido un promedio de 16 o más o acreditar haber estado en el tercio superior en 3°, 4° y 5° (si se encuentra estudiando el 5° año presentar la libreta de notas incluyendo el último bimestre cursado).</li>
         </ul>
         """, unsafe_allow_html=True)
 
-    # Cargar el archivo de colegios fijos
-    excel_file = os.path.join(current_dir, "Lista_ColegiosIEA.xlsx")
-        
+    with st.expander("Requisitos para postular por Factor Excelencia de acuerdo con el Reglamento de Admisión Vigente. (Certificado con notas literales)"):
+        st.markdown("""
+        <ul>
+            <li>Los postulantes que se presentan a la modalidad de Factor Excelencia y envíen su certificado de estudio o constancia de logros de aprendizaje con notas literales, deben de tener como mínimo el 90% con calificación A o AD en las siguientes áreas curriculares y competencias: ARTE Y CULTURA, CIENCIA Y TECNOLOGÍA, CIENCIAS SOCIALES, COMUNICACIÓN, DESARROLLO PERSONAL, CIUDADANÍA Y CÍVICA, EDUCACIÓN PARA EL TRABAJO Y MATEMÁTICA.</li>
+            </li>
+            <li>El cálculo del porcentaje mínimo se puede realizar usando los siguientes años académicos:
+                <ul>
+                    <li>Todas las carreras excepto medicina:
+                        <ul>
+                            <li>Promedio del 1° al 4° de secundaria.</li>
+                            <li>Promedio del 1° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                            <li>Promedio del 3° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                        </ul>
+                    </li>
+                    <li>Medicina:
+                        <ul>
+                            <li>Promedio del 1° al 4° de secundaria.</li>
+                            <li>Promedio del 1° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                            <li>Promedio del 3° año a los bimestres de 5° de Secundaria cursados hasta la fecha de postulación con libreta de notas.</li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+        """, unsafe_allow_html=True)
+    
     with st.sidebar:
         minADA = 72
         min = st.select_slider(
@@ -126,7 +157,6 @@ def main():
         btn = st.button("Aplicar")
         if btn:
             minADA = min
-
     # Selección de carrera utilizando streamlit_option_menu
     carrera = option_menu(
         menu_title="Selecciona la carrera",
@@ -141,7 +171,6 @@ def main():
     files = st.file_uploader('Adjunta tu Certificado de Estudios COE o CLA', accept_multiple_files=True, type=['pdf'])
     if not files:
         return
-
     progress_bar = st.progress(0, text="Procesando archivos...")
     results = pd.DataFrame()  # resultados finales
     resultsData = pd.DataFrame()  # Tidy data
@@ -152,7 +181,6 @@ def main():
     n = len(files)
     last_result = None  # Variable para almacenar el resultado del último archivo procesado
     last_dni = None  # Variable para almacenar el DNI del último archivo procesado
-    
     for i, file in enumerate(files):
         progress_bar.progress((i + 1) / n, f"Procesando archivo {i + 1}...")
         try:
@@ -177,7 +205,6 @@ def main():
     progress_bar.empty()
     
     res, cal, tab, err = st.tabs(['Resultados', 'Cálculos', 'Tablas', 'Errores'])
-    
     if not results.empty:
         results = results.set_index('DNI')
         resultsData['NOTA'] = resultsData['NOTA'].map(lambda x: float(x) if str(x).isdigit() else x)
@@ -197,12 +224,10 @@ def main():
                     st.error("El estudiante NO APLICA para esta modalidad de admisión.")
             else:
                 st.write("No hay resultados para mostrar.")
-            
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer) as writer:
                 results.to_excel(writer)
             st.download_button("Descargar", data=buffer, file_name="Resultado.xlsx", mime="application/vnd.ms-excel")
-        
         with cal:
             if 'GRADO' in resultsColegios.columns:
                 st.dataframe(resultsColegios.query(f'DNI == "{dni}"').drop(columns='DNI').set_index('GRADO'))
@@ -214,7 +239,6 @@ def main():
                 prom.mean().rename('**PROMEDIO**').to_frame().T,
                 prom.count().rename('**CANTIDAD**').to_frame().T
             ]).round(2), use_container_width=True)
-        
         with tab:
             d = resultsData.query(f'DNI == "{dni}"').drop(columns='DNI')
             st.dataframe(
@@ -229,7 +253,6 @@ def main():
                 ),
                 use_container_width=True
             )
-    
     if errores.empty:
         with err:
             st.write("No se encontraron errores")
