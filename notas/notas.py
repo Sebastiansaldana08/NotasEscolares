@@ -108,7 +108,7 @@ def procesar_tabla(tab):
 
 def verificar_anio_lectivo(df):
     anios = df['AÑO'].astype(int)
-    if not anios.empty and anios.max() <= 2021:
+    if not anios.empty and anios.max() <= 2023:
         return False
     return True
 
