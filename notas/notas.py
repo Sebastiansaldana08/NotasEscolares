@@ -108,12 +108,9 @@ def procesar_tabla(tab):
 
 def verificar_anio_lectivo(df):
     anios = df['AÑO'].astype(int)
-    if anios.empty:
+    if not anios.empty and anios.max() <= 2022:
         return False
-    
-    # Verifica si todos los años están en el rango permitido
-    anios_validos = [2023, 2024, 2025]
-    return all(anio in anios_validos for anio in anios)
+    return True
 
 def obtener_grado_maximo(df):
     grados = df['GRADO'].str.extract(r'(\d+)')[0].astype(int)
